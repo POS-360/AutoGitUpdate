@@ -11,12 +11,14 @@ import Logger from 'chegs-simple-logger';
  * @typedef {Object} Config - Configuration for Auto Git Update
  * @property {String} repository - The url to the root of a git repository to update from, or /latest GitHub release. 
  * @property {String} branch - The branch to update from. Defaults to master.
+ * @property {Boolean} performBackup - If a backup of the application should be created before updating.
  * @property {Boolean} fromReleases - Updated based off of latest published GitHub release instead of branch package.json.
  * @property {String} token - A personal access token used for accessions private repositories. 
  * @property {Logger.Options} logConfig - An object with the logging configuration, see https://github.com/chegele/Logger
  * @property {String} tempLocation - The local dir to save temporary information for Auto Git Update.
  * @property {Array[String]} ignoreFiles - An array of files to not install when updating. Useful for config files. 
  * @property {String} executeOnComplete - A command to execute after an update completes. Good for restarting the app.
+ * @property {String} executeBeforeDependenciesInstall - A command to execute before dependencies are installed.
  * @property {Boolean} exitOnComplete - Use process exit to stop the app after a successful update.
  */
 
@@ -120,11 +122,16 @@ export default class AutoGitUpdate {
         try {
             log.general('Auto Git Update - Updating application from ' + config.repository);
             await downloadUpdate();
-            // await backupApp();
+
+            if(config.performBackup) await backupApp();
+
             await installUpdate();
+
+            if (config.executeBeforeDependenciesInstall) await promiseCommandExec(config.executeBeforeDependenciesInstall);
+
             await installDependencies();
             log.general('Auto Git Update - Finished installing updated version.');
-            if (config.executeOnComplete) await promiseBlindExecute(config.executeOnComplete);
+            if (config.executeOnComplete) await promiseBlindSpawn(config.executeOnComplete);
             if (config.exitOnComplete) process.exit(1);
             return true;
         }catch(err) {
@@ -322,10 +329,38 @@ function promiseClone(repo, destination, branch) {
  * A promise wrapper for the child-process spawn function. Does not listen for results.
  * @param {String} command - The command to execute. 
  */
-function promiseBlindExecute(command) {
+function promiseBlindSpawn(command) {
     return new Promise(function(resolve, reject) {
         spawn(command, [], {shell: true, detached: true});
         setTimeout(resolve, 1000);
+    });
+}
+
+/**
+ * A promise wrapper for the child-process exec function.
+ * @param {String} command - The command to execute. 
+ */
+function promiseCommandExec(command) {
+    if (!command) return Promise.resolve();
+    if (command === "") return Promise.resolve();
+    
+    return new Promise(function(resolve, reject) {
+        const child = exec(command);
+
+        // Wait for results
+        child.stdout.on('end', resolve);
+        child.stdout.on('data', data => log.general(`Auto Git Update - Command: "${command}" - ${data.replace(/\r?\n|\r/g, '')}`));
+        child.stderr.on('data', data => {
+            if (data.toLowerCase().includes('error')) {
+                // npm passes warnings as errors, only reject if "error" is included
+                data = data.replace(/\r?\n|\r/g, '');
+                log.error('Auto Git Update - Error Executing Command: ' + data);
+                log.error('Auto Git Update - ' + data);
+                reject();
+            }else{
+                log.warning('Auto Git Update - ' + data);
+            }
+        });
     });
 }
 
