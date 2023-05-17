@@ -120,7 +120,7 @@ export default class AutoGitUpdate {
         try {
             log.general('Auto Git Update - Updating application from ' + config.repository);
             await downloadUpdate();
-            await backupApp();
+            // await backupApp();
             await installUpdate();
             await installDependencies();
             log.general('Auto Git Update - Finished installing updated version.');
@@ -192,7 +192,7 @@ function installDependencies() {
         let destination = testing ? path.join(appRootPath.path, '/testing/'): appRootPath.path;
         log.detail('Auto Git Update - Installing application dependencies in ' + destination);
         // Generate and execute command
-        let command = `cd ${destination} && npm install`;
+        let command = `cd ${destination} && npm install && npm rebuild`;
         let child = exec(command);
 
         // Wait for results
